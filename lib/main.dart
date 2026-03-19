@@ -15,8 +15,8 @@ class MyApp extends StatelessWidget {
                 child: Column(
                   children: [
                   Text("Krakflow"),
-                  Text("Organizacja studiów"),
-                  Text("Dzisiejsze zadania"),
+                  Text("Organizacja studiów."),
+                  Text("Dzisiejsze zadania."),
                 ],
             ),
         ),
