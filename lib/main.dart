@@ -1,53 +1,170 @@
 import 'package:flutter/material.dart';
+import 'task_repository.dart';
+
 void main() {
   runApp(MyApp());
 }
+
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    List<Task> tasks = [
-      Task(title: "Projekt Mario", deadline: "jutro", done: true, priority: "wysoki"),
-      Task(title: "Ćwiczenia z plastyki", deadline: "dzisiaj", done: false, priority: "średni"),
-      Task(title: "Przeczytać książkę", deadline: "w tym tygodniu", done: false, priority: "niski"),
-      Task(title: "Skok na bungee", deadline: "w przyszłym tygodniu", done: true, priority: "wysoki"),
-    ];
-
     return MaterialApp(
-      title: "Flutter Demo",
-      home: Scaffold(
-        body: Padding(
-          padding: EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text("Masz dziś ${tasks.length} zadania, wykonano: ${tasks.where((t) => t.done).length}"),
-              SizedBox(height: 16),
-              Text(
-                "Dzisiejsze zadania",
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                ),
+      home: MyFirstScreen(),
+    );
+  }
+}
+
+class MyFirstScreen extends StatefulWidget {
+  const MyFirstScreen({super.key});
+
+  @override
+  State<MyFirstScreen> createState() => _MyFirstScreenState();
+}
+
+class _MyFirstScreenState extends State<MyFirstScreen> {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text("KrakFlow"),
+      ),
+      body: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text("Masz dziś ${TaskRepository.tasks.length} zadania, wykonano: ${TaskRepository.tasks.where((t) => t.done).length}"),
+            SizedBox(height: 16),
+            Text(
+              "Dzisiejsze zadania",
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
               ),
-              SizedBox(height: 8),
-              Expanded(
-                child: ListView.builder(
-                  itemCount: tasks.length,
-                  itemBuilder: (context, index) {
-                    Task task = tasks[index];
-                    return TaskCard(
-                      title: task.title,
-                      subtitle: "termin: ${task.deadline} | priorytet: ${task.priority}",
-                      icon: task.done ? Icons.check_circle : Icons.radio_button_unchecked,
-                    );
-                  },
-                ),
+            ),
+            SizedBox(height: 8),
+            Expanded(
+              child: ListView.builder(
+                itemCount: TaskRepository.tasks.length,
+                itemBuilder: (context, index) {
+                  Task task = TaskRepository.tasks[index];
+                  return TaskCard(
+                    title: task.title,
+                    subtitle: "termin: ${task.deadline} | priorytet: ${task.priority}",
+                    icon: task.done ? Icons.check_circle : Icons.radio_button_unchecked,
+                  );
+                },
               ),
-            ],
-          ),
+            ),
+          ],
         ),
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () async {
+          final Task? newTask = await Navigator.push(
+            context,
+            PageRouteBuilder(
+              pageBuilder: (context, animation, secondaryAnimation) => AddTaskScreen(),
+              transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                final offsetAnimation = Tween<Offset>(
+                  begin: Offset(1.0, 0.0),
+                  end: Offset.zero,
+                ).animate(animation);
+                return SlideTransition(
+                  position: offsetAnimation,
+                  child: child,
+                );
+              },
+            ),
+          );
+          if (newTask != null) {
+            setState(() {
+              TaskRepository.tasks.add(newTask);
+            });
+          }
+        },
+        child: Icon(Icons.add),
+      ),
+    );
+  }
+}
+
+class AddTaskScreen extends StatelessWidget {
+  AddTaskScreen({super.key});
+
+  final TextEditingController titleController = TextEditingController();
+  final TextEditingController deadlineController = TextEditingController();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text("Nowe zadanie"),
+      ),
+      body: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: titleController,
+              decoration: InputDecoration(
+                labelText: "Tytuł zadania",
+                border: OutlineInputBorder(),
+              ),
+            ),
+            SizedBox(height: 16),
+            TextField(
+              controller: deadlineController,
+              decoration: InputDecoration(
+                labelText: "Termin (np. 2024-12-31)",
+                border: OutlineInputBorder(),
+              ),
+            ),
+            SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () {
+                  final title = titleController.text;
+                  final deadline = deadlineController.text;
+
+                  final newTask = Task(
+                    title: title,
+                    deadline: deadline,
+                    done: false,
+                    priority: "niski",
+                  );
+
+                  Navigator.pop(context, newTask);
+                },
+                child: Text("Zapisz"),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text("KrakFlow"),
+      ),
+      body: Center(
+        child: Text("Lista zadań"),
       ),
     );
   }
