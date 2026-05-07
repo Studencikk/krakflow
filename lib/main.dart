@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'task_repository.dart';
+import 'services/task_api_service.dart';
 
 void main() {
   runApp(MyApp());
@@ -25,17 +26,16 @@ class MyFirstScreen extends StatefulWidget {
 
 class _MyFirstScreenState extends State<MyFirstScreen> {
   String selectedFilter = "wszystkie";
+  late Future<List<Task>> tasksFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    tasksFuture = TaskApiService.fetchTasks();
+  }
 
   @override
   Widget build(BuildContext context) {
-    List<Task> filteredTasks;
-    if (selectedFilter == "wykonane") {
-      filteredTasks = TaskRepository.tasks.where((task) => task.done).toList();
-    } else if (selectedFilter == "do zrobienia") {
-      filteredTasks = TaskRepository.tasks.where((task) => !task.done).toList();
-    } else {
-      filteredTasks = List.from(TaskRepository.tasks);
-    }
     return Scaffold(
       appBar: AppBar(
         title: Text("KrakFlow"),
@@ -74,72 +74,95 @@ class _MyFirstScreenState extends State<MyFirstScreen> {
           ),
         ],
       ),
-      body: Padding(
-        padding: EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text("Masz dziś ${TaskRepository.tasks.length} zadania, wykonano: ${TaskRepository.tasks.where((t) => t.done).length}"),
-            SizedBox(height: 8),
-            Row(
+      body: FutureBuilder<List<Task>>(
+        future: tasksFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          if (snapshot.hasError) {
+            return Center(child: Text("Błąd: ${snapshot.error}"));
+          }
+
+          final tasks = snapshot.data!;
+          if (TaskRepository.tasks.isEmpty) {
+            TaskRepository.tasks.addAll(tasks);
+          }
+
+          List<Task> filteredTasks;
+          if (selectedFilter == "wykonane") {
+            filteredTasks = TaskRepository.tasks.where((t) => t.done).toList();
+          } else if (selectedFilter == "do zrobienia") {
+            filteredTasks = TaskRepository.tasks.where((t) => !t.done).toList();
+          } else {
+            filteredTasks = List.from(TaskRepository.tasks);
+          }
+
+          return Padding(
+            padding: EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _FilterButton(label: "Wszystkie",    isActive: selectedFilter == "wszystkie",    onPressed: () => setState(() => selectedFilter = "wszystkie")),
-                SizedBox(width: 4),
-                _FilterButton(label: "Do zrobienia", isActive: selectedFilter == "do zrobienia", onPressed: () => setState(() => selectedFilter = "do zrobienia")),
-                SizedBox(width: 4),
-                _FilterButton(label: "Wykonane",     isActive: selectedFilter == "wykonane",     onPressed: () => setState(() => selectedFilter = "wykonane")),
-              ],
-            ),
-            SizedBox(height: 8),
-            Text(
-              "Dzisiejsze zadania",
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            SizedBox(height: 8),
-            Expanded(
-              child: ListView.builder(
-                itemCount: filteredTasks.length,
-                itemBuilder: (context, index) {
-                  Task task = filteredTasks[index];
-                  return Dismissible(
-                    key: Key(task.title),
-                    onDismissed: (direction) {
-                      setState(() {
-                        TaskRepository.tasks.removeAt(index);
-                      });
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text("Zadanie ${task.title} zostało usunięte"),
+                Text(
+                  "Masz dziś ${TaskRepository.tasks.length} zadania, "
+                      "wykonano: ${TaskRepository.tasks.where((t) => t.done).length}",
+                ),
+                SizedBox(height: 8),
+                Row(
+                  children: [
+                    _FilterButton(label: "Wszystkie",    isActive: selectedFilter == "wszystkie",    onPressed: () => setState(() => selectedFilter = "wszystkie")),
+                    SizedBox(width: 4),
+                    _FilterButton(label: "Do zrobienia", isActive: selectedFilter == "do zrobienia", onPressed: () => setState(() => selectedFilter = "do zrobienia")),
+                    SizedBox(width: 4),
+                    _FilterButton(label: "Wykonane",     isActive: selectedFilter == "wykonane",     onPressed: () => setState(() => selectedFilter = "wykonane")),
+                  ],
+                ),
+                SizedBox(height: 8),
+                Text("Dzisiejsze zadania", style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                SizedBox(height: 8),
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: filteredTasks.length,
+                    itemBuilder: (context, index) {
+                      Task task = filteredTasks[index];
+                      return Dismissible(
+                        key: Key(task.title),
+                        onDismissed: (direction) {
+                          setState(() {
+                            TaskRepository.tasks.removeAt(index);
+                          });
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text("Zadanie ${task.title} zostało usunięte")),
+                          );
+                        },
+                        child: TaskCard(
+                          title: task.title,
+                          subtitle: "termin: ${task.deadline} | priorytet: ${task.priority}",
+                          done: task.done,
+                          onTap: () async {
+                            final Task? updatedTask = await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => EditTaskScreen(task: task),
+                              ),
+                            );
+                            if (updatedTask != null) {
+                              setState(() {
+                                final realIndex = TaskRepository.tasks.indexOf(task);
+                                TaskRepository.tasks[realIndex] = updatedTask;
+                              });
+                            }
+                          },
                         ),
                       );
                     },
-                    child: TaskCard(
-                      title: task.title,
-                      subtitle: "termin: ${task.deadline} | priorytet: ${task.priority}",
-                      done: task.done,
-                      onTap: () async {
-                        final Task? updatedTask = await Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => EditTaskScreen(task: task),
-                          ),
-                        );
-                        if (updatedTask != null) {
-                          setState(() {
-                            TaskRepository.tasks[index] = updatedTask;
-                          });
-                        }
-                      },
-                    ),
-                  );
-                },
-              ),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
+          );
+        },
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
@@ -152,10 +175,7 @@ class _MyFirstScreenState extends State<MyFirstScreen> {
                   begin: Offset(1.0, 0.0),
                   end: Offset.zero,
                 ).animate(animation);
-                return SlideTransition(
-                  position: offsetAnimation,
-                  child: child,
-                );
+                return SlideTransition(position: offsetAnimation, child: child);
               },
             ),
           );
