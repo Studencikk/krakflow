@@ -1,9 +1,15 @@
 import 'package:flutter/material.dart';
-import 'task_repository.dart';
+import 'models/task.dart';
 import 'services/task_api_service.dart';
+import 'package:hive_ce_flutter/hive_flutter.dart';
+import 'services/task_sync_service.dart';
+import 'services/task_local_database.dart';
 
-void main() {
-  runApp(MyApp());
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Hive.initFlutter();
+  await Hive.openBox("tasks");
+  runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
@@ -31,7 +37,18 @@ class _MyFirstScreenState extends State<MyFirstScreen> {
   @override
   void initState() {
     super.initState();
-    tasksFuture = TaskApiService.fetchTasks();
+    tasksFuture = loadTasks();
+  }
+
+  Future<List<Task>> loadTasks() async {
+    await TaskSyncService.loadInitialDataIfNeeded();
+    final localTasks = TaskLocalDatabase.getTasks();
+
+    if (TaskRepository.tasks.length <= 4) {
+      TaskRepository.tasks.addAll(localTasks);
+    }
+
+    return TaskRepository.tasks;
   }
 
   @override
@@ -55,9 +72,11 @@ class _MyFirstScreenState extends State<MyFirstScreen> {
                         child: Text("Anuluj"),
                       ),
                       TextButton(
-                        onPressed: () {
+                        onPressed: () async {
+                          await TaskLocalDatabase.deleteAllTasks();
                           setState(() {
                             TaskRepository.tasks.clear();
+                            tasksFuture = loadTasks();
                           });
                           Navigator.pop(context);
                           ScaffoldMessenger.of(context).showSnackBar(
@@ -85,10 +104,7 @@ class _MyFirstScreenState extends State<MyFirstScreen> {
             return Center(child: Text("Błąd: ${snapshot.error}"));
           }
 
-          final tasks = snapshot.data!;
-          if (TaskRepository.tasks.isEmpty) {
-            TaskRepository.tasks.addAll(tasks);
-          }
+          final tasks = snapshot.data ?? [];
 
           List<Task> filteredTasks;
           if (selectedFilter == "wykonane") {
@@ -127,10 +143,12 @@ class _MyFirstScreenState extends State<MyFirstScreen> {
                     itemBuilder: (context, index) {
                       Task task = filteredTasks[index];
                       return Dismissible(
-                        key: Key(task.title),
-                        onDismissed: (direction) {
+                        key: Key(task.id.toString()),
+                        onDismissed: (direction) async {
+                          await TaskLocalDatabase.deleteTask(task.id);
                           setState(() {
-                            TaskRepository.tasks.removeAt(index);
+                            TaskRepository.tasks.remove(task);
+                            tasksFuture = loadTasks();
                           });
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(content: Text("Zadanie ${task.title} zostało usunięte")),
@@ -140,6 +158,19 @@ class _MyFirstScreenState extends State<MyFirstScreen> {
                           title: task.title,
                           subtitle: "termin: ${task.deadline} | priorytet: ${task.priority}",
                           done: task.done,
+                          onChanged: (value) async {
+                            final updatedTask = Task(
+                              id: task.id,
+                              title: task.title,
+                              deadline: task.deadline,
+                              priority: task.priority,
+                              done: value ?? false,
+                            );
+                            await TaskLocalDatabase.updateTask(updatedTask);
+                            setState(() {
+                              tasksFuture = loadTasks();
+                            });
+                          },
                           onTap: () async {
                             final Task? updatedTask = await Navigator.push(
                               context,
@@ -227,17 +258,19 @@ class AddTaskScreen extends StatelessWidget {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: () {
+                onPressed: () async {
                   final title = titleController.text;
                   final deadline = deadlineController.text;
 
                   final newTask = Task(
+                    id: DateTime.now().millisecondsSinceEpoch,
                     title: title,
                     deadline: deadline,
                     done: false,
                     priority: "niski",
                   );
 
+                  await TaskLocalDatabase.addTask(newTask);
                   Navigator.pop(context, newTask);
                 },
                 child: Text("Zapisz"),
@@ -290,14 +323,16 @@ class EditTaskScreen extends StatelessWidget {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: () {
+                onPressed: () async {
                   final updatedTask = Task(
+                    id: task.id,
                     title: titleController.text,
                     deadline: deadlineController.text,
                     done: task.done,
                     priority: task.priority,
                   );
 
+                  await TaskLocalDatabase.updateTask(updatedTask);
                   Navigator.pop(context, updatedTask);
                 },
                 child: Text("Zapisz"),
@@ -331,17 +366,39 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 class Task {
+  final int id;
   final String title;
   final String deadline;
   final bool done;
   final String priority;
 
   Task({
+    required this.id,
     required this.title,
     required this.deadline,
     required this.done,
     required this.priority,
   });
+
+  Map<String, dynamic> toMap() {
+      return {
+        "id": id,
+        "title": title,
+        "deadline": deadline,
+        "priority": priority,
+        "done": done,
+      };
+  }
+
+  factory Task.fromMap(Map map) {
+    return Task(
+    id: map["id"],
+    title: map["title"],
+    deadline: map["deadline"],
+    priority: map["priority"],
+    done: map["done"],
+    );
+  }
 }
 
 class TaskCard extends StatelessWidget {
